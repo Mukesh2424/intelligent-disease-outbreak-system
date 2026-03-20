@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Disease Outbreak Dashboard</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+
+body{
+font-family: 'Inter', sans-serif;
+background:#f5f7fa;
+margin:0;
+padding:20px;
+}
+
+.container{
+max-width:1300px;
+margin:auto;
+}
+
+.header{
+background:white;
+padding:20px;
+border-radius:10px;
+margin-bottom:20px;
+}
+
+.buttons{
+margin-bottom:20px;
+}
+
+button{
+padding:10px 18px;
+border:none;
+border-radius:6px;
+cursor:pointer;
+font-weight:500;
+margin-right:10px;
+}
+
+.refresh{background:#4a6fa5;color:white;}
+.export{background:#2a9d8f;color:white;}
+.logout{background:#e63946;color:white;}
+
+.table-box{
+background:white;
+border-radius:10px;
+padding:20px;
+overflow-x:auto;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+}
+
+th{
+background:#4a6fa5;
+color:white;
+padding:12px;
+text-align:left;
+}
+
+td{
+padding:10px;
+border-bottom:1px solid #ddd;
+}
+
+tr:nth-child(even){
+background:#f9f9f9;
+}
+
+.normal{
+color:#2a9d8f;
+font-weight:600;
+}
+
+.outbreak{
+color:#e63946;
+font-weight:600;
+}
+
+.map-box{
+margin-top:30px;
+background:white;
+padding:20px;
+border-radius:10px;
+}
+
+#map{
+height:450px;
+border-radius:10px;
+}
+
+.chart-box{
+margin-top:30px;
+background:white;
+padding:20px;
+border-radius:10px;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+<div class="header">
+
+<h1>🦠 Disease Outbreak Dashboard</h1>
+<p>Real-time monitoring and analysis of disease outbreaks</p>
+
+</div>
+
+
+<div class="buttons">
+
+<form method="POST" action="{% url 'dashboard' %}" style="display:inline;">
+{% csrf_token %}
+<button class="refresh">🔄 Refresh Data</button>
+</form>
+
+<a href="{% url 'export_data' %}">
+<button class="export">📥 Export Data</button>
+</a>
+
+<form action="{% url 'logout' %}" method="post" style="display:inline;">
+{% csrf_token %}
+<button class="logout">Logout</button>
+</form>
+
+</div>
+
+
+<!-- TABLE -->
+
+<div class="table-box">
+
+<table>
+
+<thead>
+<tr>
+<th>S.No</th>
+<th>ID</th>
+<th>Source</th>
+<th>Location</th>
+<th>Disease</th>
+<th>Probability</th>
+<th>Text</th>
+<th>Time</th>
+<th>Prediction</th>
+</tr>
+</thead>
+
+<tbody>
+
+{% for report in reports %}
+
+<tr>
+
+<td>{{ forloop.counter }}</td>
+<td>{{ report.id }}</td>
+<td>{{ report.source }}</td>
+<td>{{ report.location }}</td>
+<td>{{ report.detected_disease }}</td>
+<td>{{ report.probability }}</td>
+<td>{{ report.text|truncatechars:60 }}</td>
+<td>{{ report.timestamp }}</td>
+
+<td>
+
+{% if report.predicted_label == "Outbreak" %}
+<span class="outbreak">OUTBREAK</span>
+{% else %}
+<span class="normal">NORMAL</span>
+{% endif %}
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+</div>
+
+
+<!-- MAP -->
+
+<div class="map-box">
+
+<h2>🌍 Global Outbreak Map</h2>
+
+<div id="map"></div>
+
+</div>
+
+
+<!-- CHART -->
+
+<div class="chart-box">
+
+<h2>📊 Disease Trend</h2>
+
+<canvas id="trendChart"></canvas>
+
+</div>
+
+</div>
+
+
+
+<script>
+
+/* MAP */
+
+var map = L.map('map').setView([22.5,78.9],4);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+maxZoom:18,
+attribution:'© OpenStreetMap'
+}
+).addTo(map);
+
+
+/* CITY COORDINATES */
+
+const coords = {
+
+"Delhi":[28.6139,77.2090],
+"Mumbai":[19.0760,72.8777],
+"Hyderabad":[17.3850,78.4867],
+"Bangalore":[12.9716,77.5946],
+"London":[51.5072,-0.1276],
+"New York":[40.7128,-74.0060],
+"Tokyo":[35.6762,139.6503],
+"Bangkok":[13.7563,100.5018],
+"Singapore":[1.3521,103.8198],
+"Sydney":[-33.8688,151.2093]
+
+};
+
+
+/* FETCH OUTBREAK DATA */
+
+fetch('/api/outbreaks/')
+.then(res=>res.json())
+.then(data=>{
+
+data.forEach(function(r){
+
+if(coords[r.location]){
+
+var lat = coords[r.location][0];
+var lon = coords[r.location][1];
+
+var color = r.predicted_label=="Outbreak" ? "red":"green";
+
+var marker = L.circleMarker(
+[lat,lon],
+{
+radius:8,
+color:color,
+fillColor:color,
+fillOpacity:0.8
+}
+).addTo(map);
+
+
+marker.bindPopup(
+"<b>Disease:</b> "+r.detected_disease+
+"<br><b>Location:</b> "+r.location+
+"<br><b>Probability:</b> "+r.probability+
+"<br><b>Status:</b> "+r.predicted_label
+);
+
+}
+
+});
+
+});
+
+
+/* CHART */
+
+fetch('/api/monthly/')
+.then(res=>res.json())
+.then(data=>{
+
+var labels = data.map(x=>x.month);
+var counts = data.map(x=>x.count);
+
+new Chart(
+document.getElementById("trendChart"),
+{
+type:'line',
+data:{
+labels:labels,
+datasets:[
+{
+label:'Outbreak Reports',
+data:counts,
+borderColor:'red',
+fill:false
+}
+]
+}
+}
+);
+
+});
+
+</script>
+
+</body>
+</html>
